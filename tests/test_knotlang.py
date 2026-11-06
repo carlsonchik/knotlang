@@ -1,31 +1,33 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Smoke-тест КНОТЛАНГ v0.6.3 — бытовое ядро и фонология.
+Smoke-тест КНОТЛАНГ v0.6.4 — лексикон и фонология.
 
 ВНИМАНИЕ: это smoke-тест, а не вычитыватель словаря. Список ROOTS задан
-вручную и синхронизируется со словарём вручную (при изменении dictionary_v0.6.md
-обновлять ROOTS здесь). Кандидаты (knot_parts_v0.6.md, interjections_v0.6.md)
-в список НЕ входят — они не норматив. Междометия (звуки-жесты) не флектируются
-и в проверках омонимии как корни не участвуют.
+вручную и синхронизируется с каноном v0.6.4 и dictionary_v0.6.md вручную.
+Кандидаты (knot_parts_v0.6.md, interjections_v0.6.md) в список НЕ входят —
+они не норматив. Междометия (звуки-жесты) не флектируются и в проверках
+омонимии как корни не участвуют. Цвета — подмодель только -u-, не четыре слоя.
 
 Проверяет:
   1. У каждого нормативного корня ровно 4 РАЗНЫЕ формы слоёв (исключение:
-     предельные fix-слова nul/vit — все формы совпадают).
+     предельные fix-слова nul/vit/mil — все формы совпадают).
   2. Фонологию всех форм: нет 3+ гласных подряд, нет 3+ согласных подряд
-     (по звукам: диграфы sh/ch = один согласный), нет запрещённых кластеров,
+     (по звукам: диграфы sh/ch/kh = один согласный), нет запрещённых кластеров,
      двойные согласные — только tt/kk (+ задокументированные исключения).
   3. Отсутствие омонимических коллизий между формами разных корней.
   4. Суффиксную модель: помеченные CVC-корни дают формы на -i/-u/-a/-e.
   5. Запреты: zult не входит в составные числа; тройное повторение основы
-     запрещено (кроме числового сокращения pa-pan и т.п.).
+     запрещено; kni-vult-multa снят (16.10.2026).
 
 Запуск:  python3 tests/test_knotlang.py
 Выход:   0 — все проверки прошли; 1 — найдены ошибки.
 """
 
 VOWELS = "aeiou"
-DIGRAPHS = ("sh", "ch", "ts", "zh")  # диграф = один согласный звук
+# Канон Ч.IV.3: sh/ch/kh — один звук. ts/zh — из исторической фонологии v0.4;
+# в живом лексиконе не встречаются, схлопывание их не мешает проверке.
+DIGRAPHS = ("sh", "ch", "kh", "ts", "zh")
 
 # Двойные согласные внутри формы: разрешены tt/kk + исключения (задокументированы)
 DOUBLE_OK = {"tt", "kk", "nn"}  # nn — только venn (кандидат консилиума)
@@ -38,16 +40,35 @@ DOUBLE_EXCEPTIONS = {"vennu", "venni", "venna", "venne"}  # venn: nn внутр�
 ROOTS = {
     # --- Ядро канона (Часть II) ---
     "knot": ("A-t", ["knit", "knut", "knat", "knet"]),
+    "rod":  ("A", ["rid", "rud", "rad", "red"]),  # на -d: без лишнего -t
     "okn":  ("suff", ["okni", "oknu", "okna", "okne"]),
     "grad": ("B", ["gradi", "gradu", "grada", "grade"]),
+    "mil":  ("fix", ["mil", "mil", "mil", "mil"]),  # предельное, 14.10.2026
+    "wul":  ("A-t", ["wilt", "wult", "walt", "welt"]),
+    "ast":  ("suff", ["asti", "astu", "asta", "aste"]),
     "sen":  ("A-t", ["sint", "sunt", "sant", "sent"]),
+    "vedr": ("B", ["vedri", "vedru", "vedra", "vedre"]),
+    "mo":   ("vowel", ["moi", "mou", "moa", "moe"]),
+    "ten":  ("A-t", ["tint", "tunt", "tant", "tent"]),
+    "veh":  ("B", ["vehi", "vehu", "veha", "vehe"]),
+    "lum":  ("A-t", ["limt", "lumt", "lamt", "lemt"]),
     "nul":  ("fix", ["nul", "nul", "nul", "nul"]),
     "vit":  ("fix", ["vit", "vit", "vit", "vit"]),  # предельное слово (легенда vit)
     "tish": ("B", ["tishit", "tishut", "tishat", "tishet"]),  # шипящие: наращение -t
     "vel":  ("A-t", ["vilt", "vult", "valt", "velt"]),
     "var":  ("A-t", ["virt", "vurt", "vart", "vert"]),
     "kafe": ("B", ["kafei", "kafeu", "kafea", "kafee"]),  # морф. искл.: удвоение
-    # --- Бытовое ядро (§15) ---
+    "momor": ("B", ["momi", "momu", "moma", "mome"]),  # почтипредельное: ряд словаря §12.2
+    # --- Миро (§12) ---
+    "mor":  ("A-t", ["mirt", "murt", "mart", "mert"]),
+    "sol":  ("A-t", ["silt", "sult", "salt", "selt"]),
+    "tul":  ("A-t", ["tilt", "tult", "talt", "telt"]),
+    "der":  ("A-t", ["dirt", "durt", "dart", "dert"]),
+    "tor":  ("A-t", ["tirt", "turt", "tart", "tert"]),
+    "dil":  ("A-t", ["dilt", "dult", "dalt", "delt"]),
+    "kap":  ("A-t", ["kipt", "kupt", "kapt", "kept"]),
+    "krep": ("B", ["krepi", "krepu", "krepa", "krepe"]),
+    # --- Бытовое ядро (§15); rad снят — радость = khush (коллизия с rod→rad) ---
     "sut":  ("A-t", ["sit", "sut", "sat", "set"]),
     "pit":  ("A-t", ["pit", "put", "pat", "pet"]),
     "hod":  ("suff", ["hodi", "hodu", "hoda", "hode"]),
@@ -57,7 +78,7 @@ ROOTS = {
     "mat":  ("A-t", ["mit", "mut", "mat", "met"]),
     "tat":  ("A-t", ["tit", "tut", "tat", "tet"]),
     "det":  ("A-t", ["dit", "dut", "dat", "det"]),
-    "rad":  ("suff", ["radi", "radu", "rada", "rade"]),
+    "khush": ("suff", ["khushi", "khushu", "khusha", "khushe"]),
     "tug":  ("suff", ["tugi", "tugu", "tuga", "tuge"]),
     "trep": ("B", ["trepi", "trepu", "trepa", "trepe"]),
     "bol":  ("suff", ["boli", "bolu", "bola", "bole"]),
@@ -81,10 +102,23 @@ ROOTS = {
 # Исторические формы (не должны участвовать в коллизиях как норма, но фонологию проходят)
 HISTORICAL = ["vultu", "wulte", "sent", "vedru", "vedra", "kniu"]
 
-# Частично зафиксированные корни (не полнофлективные — в полный ROOTS не входят)
-PARTIAL_ROOTS = {
-    "mil": ["mil", "milt"],  # канон фиксирует только -u- (mil) и -i- (milt); полный ряд — открытый вопрос
+# Цвета: подмодель только -u- (словарь §12.3). Полного ряда канон не даёт.
+COLORS = {
+    "lur": "lurt",
+    "zan": "zant",
+    "amr": "amrut",
+    "krel": "krelut",
+    "siv": "sivut",
+    "dun": "dunt",
+    "vip": "vupt",
+    "brun": "brunt",
+    "nok": "nokt",
+    "bel": "belt",
+    "trek": "trekut",
 }
+
+# Квантификаторы без засвидетельствованного четырёхформного ряда (словарь §6.1).
+QUANTIFIERS = ["ves", "veves", "mult", "kam", "tip"]
 
 # Междометия (звуки-жесты, вне морфологии): не флектируются, в омонимии не участвуют
 INTERJECTIONS = ["kve", "mu", "ah", "oh", "eh"]  # кандидаты служебного слоя (interjections_v0.6.md)
@@ -177,13 +211,8 @@ for root, (model, forms) in ROOTS.items():
         errors.append(f"[формы] корень {root}: повторяющиеся формы {forms}")
     for f in forms:
         check_phonology(f, f"форма {root}")
-    if root in ("nul", "vit") and model == "fix":
-        if len(set(forms)) != 1:
-            errors.append(f"[формы] предельное слово {root} должно не изменяться")
-# частичные корни: фонология зафиксированных форм
-for root, forms in PARTIAL_ROOTS.items():
-    for f in forms:
-        check_phonology(f, f"частичный корень {root}")
+    if model == "fix" and len(set(forms)) != 1:
+        errors.append(f"[формы] предельное слово {root} должно не изменяться")
 
 # 2. Фонология чисел и исторических форм
 for label, num in NUMBERS.items():
@@ -210,6 +239,14 @@ allowed_collide = {"pan", "pant", "duut", "nult", "zult", "dunult", "nul"}
 bad = collide - allowed_collide
 for w in sorted(bad):
     errors.append(f"[коллизия] форма корня «{w}» совпадает с числовым словом")
+for root, form in COLORS.items():
+    check_phonology(form, f"цвет {root}")
+    if form in seen:
+        errors.append(f"[коллизия] цвет «{form}» ({root}) совпадает с формой корня {seen[form]}")
+for q in QUANTIFIERS:
+    check_phonology(q, f"квантификатор {q}")
+    if q in seen:
+        errors.append(f"[коллизия] квантификатор «{q}» совпадает с формой корня {seen[q]}")
 
 # 4. Суффиксная модель: формы оканчиваются на -i/-u/-a/-e (кроме историч. kafee)
 for root, (model, forms) in ROOTS.items():
@@ -229,7 +266,7 @@ for label, num in NUMBERS.items():
         errors.append(f"[запрет] zult в составном числе {label} = {num}")
 # тройное повторение основы запрещено (композиты); числовое сокращение pa-pan допустимо
 COMPOSITES_OK = ["kni-multu", "tish-duut", "rod-kni", "tish-duut-rod", "kni-vult",
-                 "kni-vult-multa", "du-duut", "du-duut-pa-pan", "kni multu",
+                 "du-duut", "du-duut-pa-pan", "kni multu",
                  "vit pa-pan", "pa-pa-pan"]
 for c in COMPOSITES_OK:
     parts = c.replace("+", "-").replace("(", "").replace(")", "").split("-")
@@ -238,14 +275,18 @@ for c in COMPOSITES_OK:
         if parts.count(p) >= 3:
             errors.append(f"[запрет] тройное повторение основы «{p}» в {c}")
 # Стражи: запрещённые конструкции не должны встречаться среди нормативных форм
-FORBIDDEN_COMPOSITES = ["kni-kni-kni", "kni-kni-multu", "zult-pa-pa-pan"]
+# kni-vult-multa снят 16.10.2026 (Д./Л.): смешение слоёв внутри словосложения
+FORBIDDEN_COMPOSITES = ["kni-kni-kni", "kni-kni-multu", "zult-pa-pa-pan", "kni-vult-multa"]
 all_normal_forms = set()
 for root, (model, forms) in ROOTS.items():
     all_normal_forms.update(forms)
 all_normal_forms.update(NUMBERS.values())
 for c in FORBIDDEN_COMPOSITES:
-    if c in all_normal_forms:
+    if c in all_normal_forms or c in COMPOSITES_OK:
         errors.append(f"[запрет] запрещённая конструкция «{c}» присутствует в норме")
+for g in INTERJECTIONS:
+    if g in ROOTS:
+        errors.append(f"[норма] междометие «{g}» не входит в нормативный список корней")
 
 if errors:
     print(f"FAIL: {len(errors)} ошибок")
