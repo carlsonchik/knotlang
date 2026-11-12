@@ -1,126 +1,79 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Smoke-тест КНОТЛАНГ v0.6.3 — бытовое ядро и фонология.
+Проверка канона КНОТЛАНГ v0.7.
 
-ВНИМАНИЕ: это smoke-тест, а не вычитыватель словаря. Список ROOTS задан
-вручную и синхронизируется со словарём вручную (при изменении dictionary_v0.6.md
-обновлять ROOTS здесь). Кандидаты (knot_parts_v0.6.md, interjections_v0.6.md)
-в список НЕ входят — они не норматив. Междометия (звуки-жесты) не флектируются
-и в проверках омонимии как корни не участвуют.
+Список корней не зашит в этот файл: он читается из lexicon_v0.7.md.
+Фразы читаются из строк «> » в каноне, демо-текстах и README.
 
-Проверяет:
-  1. У каждого нормативного корня ровно 4 РАЗНЫЕ формы слоёв (исключение:
-     предельные fix-слова nul/vit — все формы совпадают).
-  2. Фонологию всех форм: нет 3+ гласных подряд, нет 3+ согласных подряд
-     (по звукам: диграфы sh/ch = один согласный), нет запрещённых кластеров,
-     двойные согласные — только tt/kk (+ задокументированные исключения).
-  3. Отсутствие омонимических коллизий между формами разных корней.
-  4. Суффиксную модель: помеченные CVC-корни дают формы на -i/-u/-a/-e.
-  5. Запреты: zult не входит в составные числа; тройное повторение основы
-     запрещено (кроме числового сокращения pa-pan и т.п.).
+Проверяется:
+  1. Формы словаря совпадают с правилом модели.
+  2. У обычного корня четыре разные формы; у предельного — одна;
+     у цвета нормативна только -u-; у momor нет -a-.
+  3. Нет коллизий форм.
+  4. Фонология форм, чисел и фраз.
+  5. Числа из словаря дают записанное значение; zult не входит в состав;
+     тройной pa в степени пятёрки законен, тройной повтор корня — нет.
+  6. В фразах нет голого корня: каждое слово — форма, частица, число, имя,
+     оператор с префиксом или звательное корень.le.
+  7. Старые опечатки и снятые формы в норму не вернулись.
 
-Запуск:  python3 tests/test_knotlang.py
-Выход:   0 — все проверки прошли; 1 — найдены ошибки.
+Запуск: python3 tests/test_knotlang.py
 """
 
-VOWELS = "aeiou"
-DIGRAPHS = ("sh", "ch", "ts", "zh")  # диграф = один согласный звук
+import pathlib
+import re
+import sys
 
-# Двойные согласные внутри формы: разрешены tt/kk + исключения (задокументированы)
-DOUBLE_OK = {"tt", "kk", "nn"}  # nn — только venn (кандидат консилиума)
-DOUBLE_EXCEPTIONS = {"vennu", "venni", "venna", "venne"}  # venn: nn внутри основы
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+LEXICON = ROOT / "lexicon_v0.7.md"
+UTTERANCE_FILES = [
+    ROOT / "KNOTLANG.md",
+    ROOT / "demo_texts_v0.7.md",
+    ROOT / "README.md",
+]
 
-# Корни: модель + формы [зреет, держится, отдаётся, откликается]
-# Модели: "A-t" (тип A на -t, флексия), "B" (тип B, суффиксы),
-#         "suff" (суффиксная подмодель для CVC), "vowel" (основа на гласную),
-#         "fix" (неизменяемое/предельное), "hist" (историческая форма)
-ROOTS = {
-    # --- Ядро канона (Часть II) ---
-    "knot": ("A-t", ["knit", "knut", "knat", "knet"]),
-    "okn":  ("suff", ["okni", "oknu", "okna", "okne"]),
-    "grad": ("B", ["gradi", "gradu", "grada", "grade"]),
-    "sen":  ("A-t", ["sint", "sunt", "sant", "sent"]),
-    "nul":  ("fix", ["nul", "nul", "nul", "nul"]),
-    "vit":  ("fix", ["vit", "vit", "vit", "vit"]),  # предельное слово (легенда vit)
-    "tish": ("B", ["tishit", "tishut", "tishat", "tishet"]),  # шипящие: наращение -t
-    "vel":  ("A-t", ["vilt", "vult", "valt", "velt"]),
-    "var":  ("A-t", ["virt", "vurt", "vart", "vert"]),
-    "kafe": ("B", ["kafei", "kafeu", "kafea", "kafee"]),  # морф. искл.: удвоение
-    # --- Бытовое ядро (§15) ---
-    "sut":  ("A-t", ["sit", "sut", "sat", "set"]),
-    "pit":  ("A-t", ["pit", "put", "pat", "pet"]),
-    "hod":  ("suff", ["hodi", "hodu", "hoda", "hode"]),
-    "rech": ("B", ["rechi", "rechu", "recha", "reche"]),
-    "zret": ("B", ["zreti", "zretu", "zreta", "zrete"]),
-    "chut": ("B", ["chuti", "chutu", "chuta", "chute"]),
-    "mat":  ("A-t", ["mit", "mut", "mat", "met"]),
-    "tat":  ("A-t", ["tit", "tut", "tat", "tet"]),
-    "det":  ("A-t", ["dit", "dut", "dat", "det"]),
-    "rad":  ("suff", ["radi", "radu", "rada", "rade"]),
-    "tug":  ("suff", ["tugi", "tugu", "tuga", "tuge"]),
-    "trep": ("B", ["trepi", "trepu", "trepa", "trepe"]),
-    "bol":  ("suff", ["boli", "bolu", "bola", "bole"]),
-    "den":  ("suff", ["deni", "denu", "dena", "dene"]),
-    # --- Связки (§13) ---
-    "rawi": ("vowel", ["rawi", "rawu", "rawa", "rawe"]),
-    "hel":  ("A-t", ["hilt", "hult", "halt", "helt"]),
-    "kvel": ("B", ["kveli", "kvelu", "kvela", "kvele"]),
-    "plet": ("B", ["pleti", "pletu", "pleta", "plete"]),
-    "drem": ("B", ["dremi", "dremu", "drema", "dreme"]),
-    # --- Миро/роды ---
-    "kor":  ("suff", ["kori", "koru", "kora", "kore"]),
-    "gor":  ("suff", ["gori", "goru", "gora", "gore"]),
-    "neb":  ("suff", ["nebi", "nebu", "neba", "nebe"]),
-    "venn": ("suff", ["venni", "vennu", "venna", "venne"]),
-    "pret": ("suff", ["preti", "pretu", "preta", "prete"]),
-    "cha":  ("vowel", ["chai", "chau", "chaa", "chae"]),
-    "ptah": ("B", ["ptahi", "ptahu", "ptaha", "ptahe"]),  # фонет. искл. (pt)
-}
-
-# Исторические формы (не должны участвовать в коллизиях как норма, но фонологию проходят)
-HISTORICAL = ["vultu", "wulte", "sent", "vedru", "vedra", "kniu"]
-
-# Частично зафиксированные корни (не полнофлективные — в полный ROOTS не входят)
-PARTIAL_ROOTS = {
-    "mil": ["mil", "milt"],  # канон фиксирует только -u- (mil) и -i- (milt); полный ряд — открытый вопрос
-}
-
-# Междометия (звуки-жесты, вне морфологии): не флектируются, в омонимии не участвуют
-INTERJECTIONS = ["kve", "mu", "ah", "oh", "eh"]  # кандидаты служебного слоя (interjections_v0.6.md)
-
-# Числовые формы (базовые + конструкции)
-NUMBERS = {
-    "0": "zult", "1": "nult", "2": "duut", "3": "dunult", "4": "du-duut",
-    "5": "pant", "5m": "pan", "10": "duult-pan", "25": "pa-pan",
-    "26": "pa-pan+nult", "100": "du-duut-pa-pan", "125": "pa-pa-pan",
-    "135": "(pa-pan+duult)-pan", "3125": "pa-pa-pa-pa-pan",
+VOWELS = set("aeiou")
+LAYERS = ("i", "u", "a", "e")
+DIGRAPHS = ("sh", "ch", "zh", "ts", "kh")
+POSITIONS = {"k", "t", "s", "m"}
+AFFECTS = {"le", "li", "la"}
+BOUND_PARTICLES = {"zhe", "kna"}
+NUMERAL_MORPHEMES = {"zult", "nult", "duut", "dunult", "pant", "pan", "pa", "du"}
+ATOM_ORDER = ["dunult", "duut", "nult", "zult", "pant", "pan", "pa", "du"]
+ATOM_VALUE = {
+    "zult": 0,
+    "nult": 1,
+    "duut": 2,
+    "dunult": 3,
+    "pant": 5,
+    "pan": 5,
+    "pa": 5,
+    "du": 2,
 }
 
 errors = []
 
 
-def sounds(word):
-    """Слово как последовательность звуков: диграфы схлопываются в один."""
-    w = word.lower().replace("-", "").replace("+", "").replace("(", "").replace(")", "")
+def sounds(text):
+    """Буквы → фонемы. Диграф — один звук."""
     out = []
     i = 0
-    while i < len(w):
-        two = w[i:i+2]
+    while i < len(text):
+        two = text[i:i + 2]
         if two in DIGRAPHS:
             out.append(two)
             i += 2
         else:
-            out.append(w[i])
+            out.append(text[i])
             i += 1
     return out
 
 
-def vowel_clusters(snd):
-    """Максимальная длина подряд идущих гласных звуков."""
+def cluster_len(seq, is_member):
     best = cur = 0
-    for s in snd:
-        if s in VOWELS:
+    for item in seq:
+        if is_member(item):
             cur += 1
             best = max(best, cur)
         else:
@@ -128,130 +81,507 @@ def vowel_clusters(snd):
     return best
 
 
-def consonant_clusters(snd):
-    """Максимальная длина подряд идущих согласных звуков."""
-    best = cur = 0
-    for s in snd:
-        if s not in VOWELS:
-            cur += 1
-            best = max(best, cur)
+def phonology_errors(word):
+    """Ошибки фонологии одного слова или числового выражения."""
+    found = []
+    body = word.lower()
+    # Плюс и скобки — границы. Дефис и точка — тоже границы части,
+    # но стык одинаковых согласных через дефис ещё проверяется.
+    chunks = re.split(r"[+()]+", body)
+    for chunk in chunks:
+        if not chunk:
+            continue
+        parts = [p for p in re.split(r"[-.]", chunk) if p]
+        for part in parts:
+            snd = sounds(part)
+            if cluster_len(snd, lambda s: s in VOWELS) >= 3:
+                found.append(f"3+ гласных в «{part}»")
+            if cluster_len(snd, lambda s: s not in VOWELS) >= 3:
+                found.append(f"3+ согласных в «{part}»")
+            for i in range(len(snd) - 1):
+                a, b = snd[i], snd[i + 1]
+                if a == b and a not in VOWELS and a not in DIGRAPHS:
+                    pair = a + a
+                    if pair not in {"tt", "kk"} and not (pair == "nn" and part.startswith("venn")):
+                        found.append(f"гемината {pair} в «{part}»")
+            if part.startswith("pt") and not part.startswith("ptah"):
+                found.append(f"начальное pt в «{part}»")
+            for bad in ("stk", "ptl"):
+                if bad in part:
+                    found.append(f"сочетание {bad} в «{part}»")
+        for left, right in zip(parts, parts[1:]):
+            ls, rs = sounds(left), sounds(right)
+            if not ls or not rs:
+                continue
+            if ls[-1] == rs[0] and ls[-1] not in VOWELS:
+                pair = ls[-1] + ls[-1]
+                if pair not in {"tt", "kk"}:
+                    found.append(f"стык {pair} в «{chunk}»")
+    return found
+
+
+def type_a(root):
+    idxs = [i for i, ch in enumerate(root) if ch in VOWELS]
+    if len(idxs) != 1:
+        raise AssertionError(f"тип A требует одну гласную: {root}")
+    i = idxs[0]
+    forms = []
+    for vowel in LAYERS:
+        form = root[:i] + vowel + root[i + 1:]
+        if root[-1] not in "td":
+            form += "t"
+        forms.append(form)
+    return forms
+
+
+def expected_forms(root, model):
+    if model == "A":
+        return type_a(root)
+    if model in {"B", "CV", "EXC"}:
+        return [root + vowel for vowel in LAYERS]
+    if model == "CVCV":
+        if root[-1] not in VOWELS:
+            raise AssertionError(root)
+        return [root[:-1] + vowel for vowel in LAYERS]
+    if model == "SIB":
+        return [root + vowel + "t" for vowel in LAYERS]
+    if model == "FIX":
+        return [root, root, root, root]
+    if model == "NEAR":
+        return None
+    if model == "COLOR":
+        if root[0] in VOWELS:
+            held = root + "u"
         else:
-            cur = 0
-    return best
+            held = type_a(root)[1]
+        return ["-", held, "-", "-"]
+    raise AssertionError(model)
 
 
-def check_phonology(word, where):
-    # Маркеры -, +, () — границы/паузы: кластеры считаем по сегментам,
-    # внутри сегмента согласные соединяются, через маркер — нет (просодия: пауза как слой).
-    segments = []
-    for part in word.replace("(", " ").replace(")", " ").replace("+", " ").split():
-        for sub in part.split("-"):
-            segments.append(sub)
-    for seg in segments:
-        snd = sounds(seg)
-        if vowel_clusters(snd) >= 3:
-            errors.append(f"[фонология] {where} «{word}» (сегмент «{seg}»): 3+ гласных подряд")
-        if consonant_clusters(snd) >= 3:
-            errors.append(f"[фонология] {where} «{word}» (сегмент «{seg}»): 3+ согласных подряд (по звукам)")
-        # двойные согласные внутри сегмента
-        for i in range(len(snd) - 1):
-            a, b = snd[i], snd[i+1]
-            if a == b and a not in VOWELS and a not in DIGRAPHS and (a + a) not in DOUBLE_OK and word not in DOUBLE_EXCEPTIONS:
-                errors.append(f"[фонология] {where} «{word}»: двойной согласный «{a}{a}» (разрешены tt/kk)")
-                break
-    whole = word.lower().replace("-", "").replace("+", "").replace("(", "").replace(")", "")
-    # запрещённые начальные кластеры: pt- (кроме ptah)
-    if whole.startswith("pt") and not whole.startswith("ptah"):
-        errors.append(f"[фонология] {where} «{word}»: начальный кластер pt (запрещён, кроме ptah)")
-    for bad in ("stk", "ptl"):
-        if bad in whole:
-            errors.append(f"[фонология] {where} «{word}»: запрещённое сочетание {bad}")
+def looks_like_a(root):
+    snd = sounds(root)
+    vowel_idx = [i for i, seg in enumerate(snd) if seg in VOWELS]
+    if len(vowel_idx) != 1:
+        return False
+    if vowel_idx[0] in {0, len(snd) - 1}:
+        return False
+    if snd[-1] in {"sh", "ch", "zh"}:
+        return False
+    try:
+        forms = type_a(root)
+    except AssertionError:
+        return False
+    return all(not phonology_errors(form) for form in forms)
 
 
-# 1. Четыре разные формы у каждого корня + фонология
-for root, (model, forms) in ROOTS.items():
-    if len(forms) != 4:
-        errors.append(f"[формы] корень {root}: ожидается 4 формы, получено {len(forms)}")
-    # повторяющиеся нормативные формы внутри корня (кроме предельных fix)
-    if model != "fix" and len(set(forms)) != 4:
-        errors.append(f"[формы] корень {root}: повторяющиеся формы {forms}")
-    for f in forms:
-        check_phonology(f, f"форма {root}")
-    if root in ("nul", "vit") and model == "fix":
-        if len(set(forms)) != 1:
-            errors.append(f"[формы] предельное слово {root} должно не изменяться")
-# частичные корни: фонология зафиксированных форм
-for root, forms in PARTIAL_ROOTS.items():
-    for f in forms:
-        check_phonology(f, f"частичный корень {root}")
+def parse_table(text, header_prefix):
+    rows = []
+    lines = text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if line.startswith(header_prefix):
+            start = i + 2
+            break
+    if start is None:
+        errors.append(f"[словарь] нет таблицы {header_prefix!r}")
+        return rows
+    for line in lines[start:]:
+        if not line.startswith("|"):
+            break
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        rows.append(cells)
+    return rows
 
-# 2. Фонология чисел и исторических форм
-for label, num in NUMBERS.items():
-    check_phonology(num, f"число {label}")
-for h in HISTORICAL:
-    check_phonology(h, "историческая")
 
-# 3. Коллизии форм
-seen = {}
-for root, (model, forms) in ROOTS.items():
-    for f in forms:
-        if f in seen and seen[f] != root:
-            errors.append(f"[коллизия] форма «{f}» у корней {seen[f]} и {root}")
-        seen[f] = root
-# числа не должны совпадать с формами корней (кроме закреплённых: pant/pan — число 5)
-number_forms = set(NUMBERS.values())
-number_words = set()
-for n in number_forms:
-    for part in n.replace("(", "").replace(")", "").split("+"):
-        for p in part.split("-"):
-            number_words.add(p)
-collide = set(seen) & number_words
-allowed_collide = {"pan", "pant", "duut", "nult", "zult", "dunult", "nul"}
-bad = collide - allowed_collide
-for w in sorted(bad):
-    errors.append(f"[коллизия] форма корня «{w}» совпадает с числовым словом")
+def load_lexicon():
+    text = LEXICON.read_text(encoding="utf-8")
+    nodes = []
+    for cells in parse_table(text, "| корень |"):
+        if len(cells) != 8:
+            errors.append(f"[словарь] строка узла не из 8 клеток: {cells}")
+            continue
+        root, model, ripe, held, released, echo, gloss, note = cells
+        nodes.append({
+            "root": root,
+            "model": model,
+            "forms": [ripe, held, released, echo],
+            "gloss": gloss,
+            "note": note,
+        })
+    particles = []
+    for cells in parse_table(text, "| слово |"):
+        particles.append({"word": cells[0], "role": cells[1]})
+    names = []
+    for cells in parse_table(text, "| имя |"):
+        names.append(cells[0])
+    numbers = []
+    for cells in parse_table(text, "| значение |"):
+        numbers.append({"value": int(cells[0]), "spell": cells[1]})
+    compounds = []
+    for cells in parse_table(text, "| основа |"):
+        compounds.append({"stem": cells[0], "gloss": cells[1]})
+    return nodes, particles, names, numbers, compounds
 
-# 4. Суффиксная модель: формы оканчиваются на -i/-u/-a/-e (кроме историч. kafee)
-for root, (model, forms) in ROOTS.items():
-    if model == "suff":
-        for f in forms:
-            if not f.endswith(("i", "u", "a", "e")):
-                errors.append(f"[суфф. модель] {root}: «{f}» не оканчивается на гласную слоя")
-    if model == "vowel":
-        endings = [f[-1] for f in forms]
-        if endings != ["i", "u", "a", "e"]:
-            errors.append(f"[подмодель на гласную] {root}: окончания {endings} ≠ i,u,a,e")
 
-# 5. Запреты
-# zult не входит в составные числа
-for label, num in NUMBERS.items():
-    if label not in ("0",) and "zult" in num:
-        errors.append(f"[запрет] zult в составном числе {label} = {num}")
-# тройное повторение основы запрещено (композиты); числовое сокращение pa-pan допустимо
-COMPOSITES_OK = ["kni-multu", "tish-duut", "rod-kni", "tish-duut-rod", "kni-vult",
-                 "kni-vult-multa", "du-duut", "du-duut-pa-pan", "kni multu",
-                 "vit pa-pan", "pa-pa-pan"]
-for c in COMPOSITES_OK:
-    parts = c.replace("+", "-").replace("(", "").replace(")", "").split("-")
-    for p in parts:
-        # тройное повторение одной основы подряд — запрещено
-        if parts.count(p) >= 3:
-            errors.append(f"[запрет] тройное повторение основы «{p}» в {c}")
-# Стражи: запрещённые конструкции не должны встречаться среди нормативных форм
-FORBIDDEN_COMPOSITES = ["kni-kni-kni", "kni-kni-multu", "zult-pa-pa-pan"]
-all_normal_forms = set()
-for root, (model, forms) in ROOTS.items():
-    all_normal_forms.update(forms)
-all_normal_forms.update(NUMBERS.values())
-for c in FORBIDDEN_COMPOSITES:
-    if c in all_normal_forms:
-        errors.append(f"[запрет] запрещённая конструкция «{c}» присутствует в норме")
+class ParseError(Exception):
+    pass
 
-if errors:
-    print(f"FAIL: {len(errors)} ошибок")
-    for e in errors[:40]:
-        print("  -", e)
-    raise SystemExit(1)
-else:
-    print(f"OK: {len(ROOTS)} корней, все формы фонологичны, коллизий нет, запреты соблюдены")
-    raise SystemExit(0)
+
+def parse_number(spell):
+    """Дерево выражения и его значение. Непроверяет допустимость сокращений."""
+    def parse_sum(s, i):
+        node, i = parse_prod(s, i)
+        terms = [node]
+        while i < len(s) and s[i] == "+":
+            node, i = parse_prod(s, i + 1)
+            terms.append(node)
+        if len(terms) == 1:
+            return terms[0], i
+        return ("add", terms), i
+
+    def parse_prod(s, i):
+        node, i = parse_factor(s, i)
+        factors = [node]
+        while i < len(s) and s[i] == "-":
+            node, i = parse_factor(s, i + 1)
+            factors.append(node)
+        if len(factors) == 1:
+            return factors[0], i
+        return ("mul", factors), i
+
+    def parse_factor(s, i):
+        if i < len(s) and s[i] == "(":
+            node, j = parse_sum(s, i + 1)
+            if j >= len(s) or s[j] != ")":
+                raise ParseError(spell)
+            return node, j + 1
+        for atom in ATOM_ORDER:
+            if s.startswith(atom, i):
+                nxt = i + len(atom)
+                if nxt == len(s) or s[nxt] in "+-)":
+                    return ("atom", atom), nxt
+        raise ParseError(spell)
+
+    node, end = parse_sum(spell, 0)
+    if end != len(spell):
+        raise ParseError(spell)
+    return node
+
+
+def number_value(node):
+    kind = node[0]
+    if kind == "atom":
+        return ATOM_VALUE[node[1]]
+    if kind == "add":
+        total = 0
+        for term in node[1]:
+            total += number_value(term)
+        return total
+    if kind == "mul":
+        total = 1
+        for factor in node[1]:
+            total *= number_value(factor)
+        return total
+    raise AssertionError(kind)
+
+
+def number_wellformed(node, top=True):
+    kind = node[0]
+    if kind == "atom":
+        name = node[1]
+        if name in {"zult", "pant"} and not top:
+            return False
+        if top and name in {"pan", "pa", "du"}:
+            return False
+        return True
+    if kind == "add":
+        return all(number_wellformed(term, top=False) for term in node[1])
+    if kind == "mul":
+        factors = node[1]
+        for i, factor in enumerate(factors):
+            if not number_wellformed(factor, top=False):
+                return False
+            if factor[0] != "atom":
+                continue
+            name = factor[1]
+            nxt = factors[i + 1] if i + 1 < len(factors) else None
+            nxt_name = nxt[1] if nxt and nxt[0] == "atom" else None
+            if name == "pa" and nxt_name not in {"pa", "pan"}:
+                return False
+            if name == "du" and nxt_name != "duut":
+                return False
+            if name == "pan" and nxt_name in {"pa", "pan"}:
+                return False
+            if name == "duut" and nxt_name in {"du", "duut"}:
+                return False
+        return True
+    return False
+
+
+def try_number(token):
+    try:
+        node = parse_number(token)
+    except ParseError:
+        return None
+    if not number_wellformed(node, top=True):
+        return None
+    return number_value(node)
+
+
+def content_triple(parts):
+    """True, если корень содержания повторён трижды. Числовые морфемы не считаются."""
+    counts = {}
+    for part in parts:
+        if part in NUMERAL_MORPHEMES or part in POSITIONS or part in AFFECTS or part in BOUND_PARTICLES:
+            continue
+        counts[part] = counts.get(part, 0) + 1
+    return any(n >= 3 for n in counts.values())
+
+
+def utterances_in(path):
+    found = []
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if line.startswith("> "):
+            found.append((path.name, lineno, line[2:].strip()))
+    return found
+
+
+def tokens_of(utterance):
+    text = utterance.strip()
+    text = re.sub(r"^(?:[A-Za-z][A-Za-z]*|[A-ZА-Я]\.)\s*:\s*", "", text)
+    raw = text.split()
+    tokens = []
+    for token in raw:
+        token = token.strip(".,?!;:…").lower()
+        if token:
+            tokens.append(token)
+    return tokens
+
+
+def check_token(token, forms, form_layer, color_forms, roots, free_particles, names):
+    if token in names or token in free_particles or token in forms:
+        return
+    if token == "nai-zhe":
+        return
+    if try_number(token) is not None:
+        return
+    if "." in token:
+        root, suffix = token.split(".", 1)
+        if suffix == "le" and root in roots:
+            return
+        errors.append(f"[фраза] звательное «{token}» не сходится")
+        return
+    if "-" in token:
+        parts = token.split("-")
+        while parts and parts[0] in POSITIONS:
+            parts = parts[1:]
+        while parts and parts[0] == "kna":
+            parts = parts[1:]
+        if parts and parts[-1] in AFFECTS and parts[-1] not in forms:
+            parts = parts[:-1]
+        if len(parts) == 1 and parts[0] in {"kne", "kni"}:
+            return
+        if not parts or any(part not in forms for part in parts):
+            errors.append(f"[фраза] не разобрано «{token}»")
+            return
+        if any(part in color_forms for part in parts[1:]):
+            errors.append(f"[фраза] цвет не в начале «{token}»")
+        if content_triple(token.split("-")):
+            errors.append(f"[фраза] тройной повтор в «{token}»")
+        layers = []
+        for i, part in enumerate(parts):
+            if i == 0 and part in color_forms:
+                continue
+            layers.append(form_layer[part])
+        concrete = [layer for layer in layers if layer != "*"]
+        if len(set(concrete)) > 1:
+            errors.append(f"[фраза] разные слои в композите «{token}»")
+        return
+    for suffix in ("le", "li", "la"):
+        if token.endswith(suffix) and token[: -len(suffix)] in forms:
+            return
+    errors.append(f"[фраза] не разобрано «{token}»")
+
+
+def main():
+    nodes, particles, names, numbers, compounds = load_lexicon()
+    by_root = {}
+    form_owner = {}
+    form_layer = {}
+    color_forms = set()
+    all_forms = set()
+
+    for node in nodes:
+        root = node["root"]
+        model = node["model"]
+        listed = node["forms"]
+        if root in by_root:
+            errors.append(f"[словарь] корень {root} повторён")
+        by_root[root] = node
+        if model != "NEAR":
+            want = expected_forms(root, model)
+            if listed != want:
+                errors.append(f"[формы] {root}: в словаре {listed}, по правилу {want}")
+        else:
+            if listed[2] != "-":
+                errors.append(f"[формы] {root}: почтипредельное не должно отдаваться в -a-")
+            if listed[1] != "momu" or root != "momor":
+                errors.append(f"[формы] почтипредельное v0.7 — это momor/momu, получено {root} {listed}")
+        if model == "FIX" and len(set(listed)) != 1:
+            errors.append(f"[формы] предельное {root} изменилось: {listed}")
+        if model == "COLOR":
+            if listed[0] != "-" or listed[2] != "-" or listed[3] != "-":
+                errors.append(f"[формы] цвет {root} имеет не только -u-")
+            color_forms.add(listed[1])
+        if model not in {"FIX", "COLOR", "NEAR"} and len(set(listed)) != 4:
+            errors.append(f"[формы] {root}: формы не различны {listed}")
+        if looks_like_a(root) and model not in {"A", "COLOR"} and node["note"] == "-":
+            errors.append(f"[модель] {root} выглядит как тип A, но записан как {model} без заметки")
+        if model == "A" and not looks_like_a(root):
+            errors.append(f"[модель] {root} записан как тип A, но правило A на него не садится")
+        for layer, form in zip(LAYERS, listed):
+            if form == "-":
+                continue
+            all_forms.add(form)
+            if form in form_owner and form_owner[form] != root:
+                errors.append(f"[коллизия] «{form}» у {form_owner[form]} и {root}")
+            form_owner[form] = root
+            if model == "FIX":
+                form_layer[form] = "*"
+            else:
+                form_layer[form] = layer
+            for problem in phonology_errors(form):
+                errors.append(f"[фонология] {root} «{form}»: {problem}")
+
+    if "moma" in all_forms:
+        errors.append("[формы] moma не должна входить в норму")
+    if "mult" in all_forms:
+        errors.append("[формы] голое mult не форма; много — это multu")
+    if "multu" not in all_forms:
+        errors.append("[формы] нет multu")
+
+    banned = [
+        "belt", "nokt", "zant", "sivut", "krelut", "trekut", "amrut",
+        "duult", "vultu", "wulte", "radi", "radu", "rada", "rade",
+        "chaii", "ptil", "ptilu", "zemu", "moma",
+    ]
+    for old in banned:
+        if old in all_forms:
+            errors.append(f"[снято] «{old}» снова в норме")
+
+    # Близкие, но разные слова обязаны остаться разными.
+    guards = [
+        ("wult", "vult"),
+        ("dut", "duut"),
+        ("duut", "dult"),
+        ("dut", "dult"),
+        ("nul", "nult"),
+        ("momu", "mou-murt"),
+    ]
+    for left, right in guards:
+        if left == right:
+            errors.append(f"[коллизия] сторож {left}")
+
+    free_particles = {row["word"] for row in particles if row["word"] not in BOUND_PARTICLES}
+    for bound in BOUND_PARTICLES:
+        if bound not in {row["word"] for row in particles}:
+            errors.append(f"[частицы] нет связанной частицы {bound}")
+    name_set = {name.lower().rstrip(".") for name in names}
+
+    for row in numbers:
+        spell = row["spell"]
+        try:
+            node = parse_number(spell)
+        except ParseError:
+            errors.append(f"[число] не читается {spell}")
+            continue
+        if not number_wellformed(node, top=True):
+            errors.append(f"[число] запись запрещена правилом: {spell}")
+            continue
+        got = number_value(node)
+        if got != row["value"]:
+            errors.append(f"[число] {spell}: по правилу {got}, в словаре {row['value']}")
+        for problem in phonology_errors(spell):
+            errors.append(f"[фонология] число {spell}: {problem}")
+        if "zult" in spell and row["value"] != 0:
+            errors.append(f"[число] zult внутри {spell}")
+
+    extras = {
+        "dunult-duut": 6,
+        "dunult-du-duut": 12,
+        "pa-pa-pa-pan": 625,
+        "pant": 5,
+        "duut-pan": 10,
+        "pa-pan+duut-pan": 35,
+        "pa-pa-pan+pan": 130,
+    }
+    for spell, value in extras.items():
+        node = parse_number(spell)
+        if not number_wellformed(node, top=True) or number_value(node) != value:
+            errors.append(f"[число] {spell} должно давать {value}")
+    for bad in ("zult-pan", "pan", "pa", "du", "pan-pan", "duut-duut", "pant+nult", "duult", "duult-pan"):
+        if try_number(bad) is not None:
+            errors.append(f"[число] запрещённая запись прошла: {bad}")
+    if not content_triple(["kni", "kni", "kni"]):
+        errors.append("[повтор] kni-kni-kni должен быть запрещён")
+    if content_triple(["pa", "pa", "pa", "pan"]):
+        errors.append("[повтор] степень pa-pa-pa-pan не должна считаться тройным корнем")
+
+    # Композиты: один слой на обоих корнях, и морская вода не равна океану.
+    for row in compounds:
+        left, right = row["stem"].split("-")
+        if left not in by_root or right not in by_root:
+            errors.append(f"[композит] неизвестная основа {row['stem']}")
+            continue
+        for index, layer in enumerate(LAYERS):
+            a = by_root[left]["forms"][index]
+            b = by_root[right]["forms"][index]
+            if a == "-" or b == "-":
+                errors.append(f"[композит] {row['stem']} не имеет слоя {layer}")
+                continue
+            built = f"{a}-{b}"
+            for problem in phonology_errors(built):
+                errors.append(f"[фонология] композит {built}: {problem}")
+        if row["stem"] == "mo-mor":
+            sea = f"{by_root['mo']['forms'][1]}-{by_root['mor']['forms'][1]}"
+            if sea == "momu" or sea == "momor":
+                errors.append(f"[коллизия] морская вода {sea} совпала с океаном")
+
+    for path in UTTERANCE_FILES:
+        for filename, lineno, utterance in utterances_in(path):
+            tokens = tokens_of(utterance)
+            if not tokens:
+                errors.append(f"[фраза] {filename}:{lineno} пустая")
+            for token in tokens:
+                before = len(errors)
+                check_token(token, all_forms, form_layer, color_forms, by_root, free_particles, name_set)
+                for problem in phonology_errors(token):
+                    errors.append(f"[фонология] {filename}:{lineno} «{token}»: {problem}")
+                if len(errors) > before:
+                    errors.append(f"    источник {filename}:{lineno} «{utterance}»")
+
+    # Сторож: голый корень и старая опечатка не должны проходить как фраза.
+    for bad_line in ("Okn nai.", "Kna-knot nai.", "Rawu var nai.", "Duult nai.", "Moma nai."):
+        bad_tokens = tokens_of(bad_line)
+        before = len(errors)
+        for token in bad_tokens:
+            check_token(token, all_forms, form_layer, color_forms, by_root, free_particles, name_set)
+        if len(errors) == before:
+            errors.append(f"[сторож] незаконная фраза прошла: {bad_line}")
+        else:
+            del errors[before:]
+
+    if errors:
+        print(f"FAIL: {len(errors)} ошибок")
+        for item in errors[:60]:
+            print(" ", item)
+        return 1
+    print(
+        f"OK: {len(nodes)} корней, {len(all_forms)} форм, "
+        f"{len(numbers)} чисел, фразы канона и демо разобраны"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
